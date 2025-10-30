@@ -10,7 +10,48 @@ const RecordingInterface = () => {
   const [analysisData, setAnalysisData] = useState<any>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const analyzerRef = useRef<AnalyserNode | null>(null);
+  const silenceTimerRef = useRef<number | null>(null);
+  const silenceStartRef = useRef<number | null>(null);
   const { toast } = useToast();
+
+  const monitorSilence = () => {
+    if (!analyzerRef.current) return;
+
+    const analyzer = analyzerRef.current;
+    const bufferLength = analyzer.frequencyBinCount;
+    const dataArray = new Uint8Array(bufferLength);
+
+    const checkAudio = () => {
+      if (!isRecording) return;
+
+      analyzer.getByteFrequencyData(dataArray);
+      const average = dataArray.reduce((a, b) => a + b) / bufferLength;
+
+      // If volume is below threshold (silence)
+      if (average < 10) {
+        if (silenceStartRef.current === null) {
+          silenceStartRef.current = Date.now();
+        } else {
+          const silenceDuration = Date.now() - silenceStartRef.current;
+          if (silenceDuration >= 4000) {
+            // 4 seconds of silence
+            console.log("4 seconds of silence detected, stopping recording");
+            stopRecording();
+            return;
+          }
+        }
+      } else {
+        // Reset silence timer when sound is detected
+        silenceStartRef.current = null;
+      }
+
+      silenceTimerRef.current = requestAnimationFrame(checkAudio);
+    };
+
+    checkAudio();
+  };
 
   const startRecording = async () => {
     try {
@@ -18,6 +59,13 @@ const RecordingInterface = () => {
       const mediaRecorder = new MediaRecorder(stream);
       mediaRecorderRef.current = mediaRecorder;
       audioChunksRef.current = [];
+
+      // Set up audio analysis for silence detection
+      audioContextRef.current = new AudioContext();
+      const source = audioContextRef.current.createMediaStreamSource(stream);
+      analyzerRef.current = audioContextRef.current.createAnalyser();
+      analyzerRef.current.fftSize = 2048;
+      source.connect(analyzerRef.current);
 
       mediaRecorder.ondataavailable = (event) => {
         if (event.data.size > 0) {
@@ -29,13 +77,24 @@ const RecordingInterface = () => {
         const audioBlob = new Blob(audioChunksRef.current, { type: "audio/webm" });
         await processAudio(audioBlob);
         stream.getTracks().forEach((track) => track.stop());
+        
+        // Clean up audio context
+        if (audioContextRef.current) {
+          audioContextRef.current.close();
+          audioContextRef.current = null;
+        }
       };
 
       mediaRecorder.start();
       setIsRecording(true);
+      silenceStartRef.current = null;
+      
+      // Start monitoring for silence
+      monitorSilence();
+      
       toast({
         title: "Recording started",
-        description: "Speak clearly in English",
+        description: "Will auto-stop after 4 seconds of silence",
       });
     } catch (error) {
       toast({
@@ -50,6 +109,13 @@ const RecordingInterface = () => {
     if (mediaRecorderRef.current && isRecording) {
       mediaRecorderRef.current.stop();
       setIsRecording(false);
+      
+      // Cancel silence monitoring
+      if (silenceTimerRef.current) {
+        cancelAnimationFrame(silenceTimerRef.current);
+        silenceTimerRef.current = null;
+      }
+      silenceStartRef.current = null;
     }
   };
 
