@@ -29,6 +29,18 @@ interface AnalysisResultsProps {
 const AnalysisResults = ({ data }: AnalysisResultsProps) => {
   const accuracy = 100 - data.stats.errorPercentage;
 
+  // Generate corrected text by applying all grammar corrections
+  const getCorrectedText = () => {
+    let corrected = data.transcription;
+    data.grammarErrors.forEach((error) => {
+      corrected = corrected.replace(error.original, error.corrected);
+    });
+    return corrected;
+  };
+
+  const correctedText = getCorrectedText();
+  const hasCorrections = data.grammarErrors.length > 0;
+
   return (
     <div className="space-y-6 animate-slide-up">
       {/* Stats Overview */}
@@ -73,7 +85,7 @@ const AnalysisResults = ({ data }: AnalysisResultsProps) => {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <BookOpen className="w-5 h-5" />
-            Transcription
+            {hasCorrections ? "Original Text" : "Transcription"}
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -82,6 +94,26 @@ const AnalysisResults = ({ data }: AnalysisResultsProps) => {
           </p>
         </CardContent>
       </Card>
+
+      {/* Corrected Text */}
+      {hasCorrections && (
+        <Card className="shadow-soft border-2 border-success/30">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <CheckCircle2 className="w-5 h-5 text-success" />
+              Corrected Text
+            </CardTitle>
+            <CardDescription>
+              Text with all grammar corrections applied
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <p className="text-foreground leading-relaxed bg-success/5 p-4 rounded-lg font-medium">
+              {correctedText}
+            </p>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Grammar Errors */}
       {data.grammarErrors.length > 0 && (
